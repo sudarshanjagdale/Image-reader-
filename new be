@@ -1,0 +1,123 @@
+import os
+import zipfile
+import io
+import pandas as pd
+import numpy as np
+import cv2
+from PIL import Image
+import imagehash
+from skimage.metrics import structural_similarity as ssim
+from itertools import combinations
+from collections import defaultdict
+
+# Load and hash images
+def compute_hash(img_bytes):
+    try:
+        img = Image.open(io.BytesIO(img_bytes)).convert('L')
+        return imagehash.average_hash(img)
+    except:
+        return None
+
+# Load image for SSIM
+def load_img_gray(img_bytes):
+    try:
+        return cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
+    except:
+        return None
+
+# Read all document PNGs from each ZIP
+def extract_png_info(zip_path):
+    doc_dict = {}
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        for file in zip_ref.namelist():
+            if file.startswith('DOC-008 Consent Form/') and file.endswith('.png'):
+                parts = file.split('/')
+                if len(parts) >= 3:
+                    doc_id = parts[1].replace("document_", "")
+                    img_bytes = zip_ref.read(file)
+                    img_hash = compute_hash(img_bytes)
+                    if img_hash:
+                        doc_dict.setdefault(doc_id, []).append((file, zip_path, img_hash))
+    return doc_dict
+
+# Compare hashes and shortlist similar docs
+def shortlist_similar_docs(all_docs, hash_threshold=5):
+    similar_candidates = defaultdict(set)
+    doc_ids = list(all_docs.keys())
+
+    for i in range(len(doc_ids)):
+        for j in range(i + 1, len(doc_ids)):
+            doc1, doc2 = doc_ids[i], doc_ids[j]
+            pages1 = all_docs[doc1]
+            pages2 = all_docs[doc2]
+
+            for p1 in pages1:
+                for p2 in pages2:
+                    if abs(p1[2] - p2[2]) <= hash_threshold:
+                        similar_candidates[doc1].add(doc2)
+                        similar_candidates[doc2].add(doc1)
+                        break  # One match is enough to consider similar
+    return similar_candidates
+
+# Run SSIM on shortlisted docs
+def confirm_duplicates_ssim(all_docs, shortlist, ssim_threshold=0.90):
+    final_matches = []
+    visited = set()
+
+    for doc1 in shortlist:
+        for doc2 in shortlist[doc1]:
+            if (doc1, doc2) in visited or (doc2, doc1) in visited:
+                continue
+            visited.add((doc1, doc2))
+            matched_pages = []
+
+            for f1, zip1, _ in all_docs[doc1]:
+                for f2, zip2, _ in all_docs[doc2]:
+                    try:
+                        with zipfile.ZipFile(zip1, 'r') as z1, zipfile.ZipFile(zip2, 'r') as z2:
+                            img1 = load_img_gray(z1.read(f1))
+                            img2 = load_img_gray(z2.read(f2))
+
+                            if img1 is None or img2 is None:
+                                continue
+                            if img1.shape != img2.shape:
+                                img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+
+                            score = ssim(img1, img2)
+                            if score >= ssim_threshold:
+                                matched_pages.append(os.path.basename(f1))
+                    except Exception as e:
+                        print(f"Error comparing images: {e}")
+
+            if matched_pages:
+                final_matches.append([doc1, doc2, ", ".join(sorted(set(matched_pages)))])
+    return final_matches
+
+# MAIN
+def main():
+    zip_folder = r"\\infau.wbcau.westpac.com.au\Data\IDP_Model_Training\CONSENT"  # Update if needed
+    all_docs = {}
+
+    print("📦 Scanning ZIP files...")
+    for zip_name in os.listdir(zip_folder):
+        if zip_name.endswith(".zip"):
+            zip_path = os.path.join(zip_folder, zip_name)
+            print(f"Reading: {zip_path}")
+            doc_data = extract_png_info(zip_path)
+            for doc_id, info in doc_data.items():
+                all_docs.setdefault(doc_id, []).extend(info)
+
+    print(f"✅ Total documents loaded: {len(all_docs)}")
+
+    print("⚡ Shortlisting similar documents using imagehash...")
+    shortlist = shortlist_similar_docs(all_docs)
+
+    print("🧠 Verifying duplicates using SSIM...")
+    matched = confirm_duplicates_ssim(all_docs, shortlist)
+
+    df = pd.DataFrame(matched, columns=["Main Document", "Similar Document", "Duplicate Pages"])
+    df.to_csv("grouped_duplicates_output.csv", index=False)
+    print("✅ Done! CSV saved as 'grouped_duplicates_output.csv'")
+
+if __name__ == "__main__":
+    main()
