@@ -1,4 +1,4 @@
-import os
+import o
 import zipfile
 from PIL import Image
 from io import BytesIO
