@@ -1,0 +1,119 @@
+import os, zipfile, io
+import pandas as pd, numpy as np, cv2
+from PIL import Image
+import imagehash
+from skimage.metrics import structural_similarity as ssim
+from collections import defaultdict
+
+# Resize and grayscale image from bytes
+def load_resized_image(img_bytes, size=(300, 400)):
+    try:
+        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
+        if img is not None:
+            return cv2.resize(img, size)
+    except:
+        return None
+
+# Generate imagehash (for filtering)
+def get_hash(img_bytes):
+    try:
+        img = Image.open(io.BytesIO(img_bytes)).convert('L')
+        return imagehash.average_hash(img)
+    except:
+        return None
+
+# Read all doc PNGs and hashes from a ZIP
+def extract_doc_images(zip_path):
+    doc_pages = {}
+    with zipfile.ZipFile(zip_path, 'r') as z:
+        for file in z.namelist():
+            if file.startswith('DOC-008 Consent Form/') and file.endswith('.png'):
+                parts = file.split('/')
+                if len(parts) >= 3:
+                    doc_id = parts[1].replace("document_", "")
+                    try:
+                        img_bytes = z.read(file)
+                        h = get_hash(img_bytes)
+                        if h:
+                            doc_pages.setdefault(doc_id, []).append((file, zip_path, h))
+                    except:
+                        continue
+    return doc_pages
+
+# Shortlist doc pairs with hash proximity
+def get_similar_docs(doc_dict, hash_diff=5):
+    similar = defaultdict(set)
+    keys = list(doc_dict.keys())
+    for i in range(len(keys)):
+        for j in range(i+1, len(keys)):
+            d1, d2 = keys[i], keys[j]
+            for p1 in doc_dict[d1]:
+                for p2 in doc_dict[d2]:
+                    if abs(p1[2] - p2[2]) <= hash_diff:
+                        similar[d1].add(d2)
+                        similar[d2].add(d1)
+                        break
+    return similar
+
+# Compare all PNGs between two documents
+def compare_doc_pages(doc1, doc2, doc_dict):
+    matched_pages = []
+    pages1 = doc_dict[doc1]
+    pages2 = doc_dict[doc2]
+
+    for f1, zip1, _ in pages1:
+        for f2, zip2, _ in pages2:
+            try:
+                with zipfile.ZipFile(zip1, 'r') as z1, zipfile.ZipFile(zip2, 'r') as z2:
+                    img1 = load_resized_image(z1.read(f1))
+                    img2 = load_resized_image(z2.read(f2))
+                    if img1 is None or img2 is None:
+                        continue
+                    if img1.shape != img2.shape:
+                        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+                    score = ssim(img1, img2)
+                    if score >= 0.90:
+                        matched_pages.append(os.path.basename(f1))
+            except Exception as e:
+                continue
+    return matched_pages
+
+# Main function
+def main():
+    zip_folder = r"\\infau.wbcau.westpac.com.au\Data\IDP_Model_Training\CONSENT"
+    doc_dict = {}
+
+    print("📦 Reading ZIP files...")
+    for zip_name in os.listdir(zip_folder):
+        if zip_name.endswith(".zip"):
+            zip_path = os.path.join(zip_folder, zip_name)
+            print(f"Reading: {zip_path}")
+            data = extract_doc_images(zip_path)
+            for doc_id, pages in data.items():
+                doc_dict.setdefault(doc_id, []).extend(pages)
+
+    print(f"✅ Total documents: {len(doc_dict)}")
+
+    print("🔍 Shortlisting similar docs using imagehash...")
+    shortlist = get_similar_docs(doc_dict)
+
+    print("🔬 Comparing full document pages using resized SSIM...")
+    visited = set()
+    result = []
+
+    for d1 in shortlist:
+        for d2 in shortlist[d1]:
+            if (d1, d2) in visited or (d2, d1) in visited:
+                continue
+            visited.add((d1, d2))
+            matched = compare_doc_pages(d1, d2, doc_dict)
+            if matched:
+                result.append([d1, d2, ", ".join(sorted(set(matched)))])
+                print(f"✅ Match: {d1} ↔ {d2} → {matched}")
+
+    df = pd.DataFrame(result, columns=["Main Document", "Similar Document", "Duplicate Pages"])
+    df.to_csv("grouped_duplicates_output_resized.csv", index=False)
+    print("✅ Done! Output saved as 'grouped_duplicates_output_resized.csv'")
+
+if __name__ == "__main__":
+    main()
