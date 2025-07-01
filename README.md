@@ -1,41 +1,43 @@
-import pandas as pd
+Subject: Steps Followed for Time Category Analysis – June Data
 
-# Load your CSV
-df = pd.read_csv('pages.csv')
+Hi [Manager's Name],
 
-# Clean column names if needed
-df.columns = df.columns.str.strip()
+As discussed, here’s the approach I followed for preparing the time category data for June:
 
-# Output list
-results = []
+1. Download data from production – approx. 10–15 minutes (depending on volume).
 
-# Group by hash to find similar pages
-for hash_value, group in df.groupby('Hash'):
-    doc_ids = group['Doc_ID'].unique()
-    
-    # Only consider hashes with more than 1 document ID (i.e., duplicates across docs)
-    if len(doc_ids) > 1:
-        for doc_id in doc_ids:
-            current_doc_pages = group[group['Doc_ID'] == doc_id]
-            others = group[group['Doc_ID'] != doc_id]
-            other_doc_ids = others['Doc_ID'].unique()
-            
-            for other_doc_id in other_doc_ids:
-                matching_pages = others[others['Doc_ID'] == other_doc_id]['Page_No'].tolist()
-                results.append({
-                    'Doc ID': doc_id,
-                    'Similar Doc ID': other_doc_id,
-                    'Page No Matched': ','.join(map(str, sorted(set(matching_pages))))
-                })
 
-# Create final DataFrame and drop duplicate pairs (e.g., keep only one of 126-262 or 262-126)
-result_df = pd.DataFrame(results)
+2. Remove unwanted columns and keep only required fields.
 
-# To avoid duplicate pairs (optional)
-result_df['Pair'] = result_df.apply(lambda row: '-'.join(sorted([str(row['Doc ID']), str(row['Similar Doc ID'])])), axis=1)
-result_df = result_df.drop_duplicates('Pair').drop(columns='Pair')
 
-# Save result
-result_df.to_csv('similar_doc_matches.csv', index=False)
+3. Add calculated columns:
 
-print("✅ Done! Output saved to 'similar_doc_matches.csv'")
+Time Taken (in minutes) using:
+=(C2-B2)*1440
+
+Time Category using:
+
+=IF(D2<=15,"Within 15 min",IF(D2<=30,"Between 15-30 min",IF(D2<=60,"Between 30-60 min","More than 60 min")))
+
+
+
+4. Insert Pivot Table:
+
+Rows: Time Category
+
+Values: Count of Submission IDs
+
+
+
+5. Add percentage using:
+=Count / Grand Total * 100
+
+
+
+Since formulas and structure are already ready, it takes only about 5 minutes after downloading.
+Overall estimated time: 15–20 minutes.
+
+Let me know if you’d like the file or if anything else is needed.
+
+Thanks,
+Sudarshan
