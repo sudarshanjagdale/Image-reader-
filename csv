@@ -1,13 +1,13 @@
 let csvData = "Document ID,Pages,Layout,Usage Rule,Source\n";
 let currentPage = 1;
-let totalPages = 184; // Set your total number of pages here
-let delay = 2000; // Wait time per page (ms)
+let totalPages = 184; // Update if needed
+let delay = 40000; // 40 seconds wait for page to load
 
 async function extractAllPages() {
     while (currentPage <= totalPages) {
-        console.log(`Extracting page ${currentPage}...`);
+        console.log(`📄 Extracting page ${currentPage}...`);
 
-        // Wait for content to fully load
+        // Wait for page to load
         await new Promise(resolve => setTimeout(resolve, delay));
 
         let rows = document.querySelectorAll("table tbody tr");
@@ -17,10 +17,12 @@ async function extractAllPages() {
             csvData += rowData + "\n";
         });
 
-        // Click next button if available
-        let nextBtn = document.querySelector('button[aria-label="Next page"]');
+        // Try clicking the next page button
+        let nextBtn = Array.from(document.querySelectorAll("button"))
+            .find(btn => btn.textContent.includes("›") || btn.getAttribute("aria-label")?.includes("Next"));
+
         if (!nextBtn || nextBtn.disabled) {
-            console.log("No more pages or Next button not found.");
+            console.log("❌ No more pages or Next button not found.");
             break;
         }
 
@@ -28,17 +30,17 @@ async function extractAllPages() {
         currentPage++;
     }
 
-    // Create and download CSV file
+    // Download CSV file
     let blob = new Blob([csvData], { type: 'text/csv' });
     let url = URL.createObjectURL(blob);
     let link = document.createElement("a");
     link.href = url;
-    link.download = "hyperscience_training_data.csv";
+    link.download = "hyperscience_training_data_all_pages.csv";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    console.log("✅ CSV downloaded successfully.");
+    console.log("✅ CSV downloaded with all pages.");
 }
 
 extractAllPages();
