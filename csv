@@ -1,27 +1,39 @@
 let csvData = "Document ID,Pages,Layout,Usage Rule,Source\n";
+let currentPage = 1;
+let totalPages = 20;
 
-async function extractTableData() {
-    for (let i = 0; i < 20; i++) {
+async function extractAllPages() {
+    while (currentPage <= totalPages) {
+        console.log(`Extracting page ${currentPage}...`);
         let rows = document.querySelectorAll("table tbody tr");
-        
+
         rows.forEach(row => {
             let cells = row.querySelectorAll("td");
             let rowData = Array.from(cells).map(td => td.innerText.trim()).join(",");
             csvData += rowData + "\n";
         });
 
-        // Click the "Next" button to go to next page
-        const nextButton = document.querySelector('[aria-label="Next page"]');
-        if (nextButton && !nextButton.disabled) {
-            nextButton.click();
-            await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 sec
-        } else {
+        // Go to next page
+        let nextBtn = document.querySelector('[aria-label="Next page"]');
+        if (!nextBtn || nextBtn.disabled) {
             break;
         }
+        nextBtn.click();
+        currentPage++;
+
+        // Wait for the next page to load
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
-    // Show final CSV output
-    console.log(csvData);
+    // Download as CSV file
+    let blob = new Blob([csvData], { type: 'text/csv' });
+    let url = URL.createObjectURL(blob);
+    let link = document.createElement("a");
+    link.href = url;
+    link.download = "hyperscience_training_data.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
-extractTableData();
+extractAllPages();
