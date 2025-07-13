@@ -1,0 +1,27 @@
+let csvData = "Document ID,Pages,Layout,Usage Rule,Source\n";
+
+async function extractTableData() {
+    for (let i = 0; i < 20; i++) {
+        let rows = document.querySelectorAll("table tbody tr");
+        
+        rows.forEach(row => {
+            let cells = row.querySelectorAll("td");
+            let rowData = Array.from(cells).map(td => td.innerText.trim()).join(",");
+            csvData += rowData + "\n";
+        });
+
+        // Click the "Next" button to go to next page
+        const nextButton = document.querySelector('[aria-label="Next page"]');
+        if (nextButton && !nextButton.disabled) {
+            nextButton.click();
+            await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 sec
+        } else {
+            break;
+        }
+    }
+
+    // Show final CSV output
+    console.log(csvData);
+}
+
+extractTableData();
