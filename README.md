@@ -1,4 +1,4 @@
-// Create or update a single persistent toast
+// Show toast message on screen
 function createOrUpdateToast(message) {
     let toast = document.getElementById('persistent-toast');
     if (!toast) {
@@ -9,23 +9,20 @@ function createOrUpdateToast(message) {
             top: '20px',
             right: '20px',
             zIndex: 9999,
-            maxWidth: '400px',
             padding: '12px 20px',
             borderRadius: '8px',
             backgroundColor: 'rgba(0, 0, 0, 0.85)',
             color: 'white',
             fontSize: '14px',
-            fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif',
-            boxShadow: '0px 0px 12px rgba(0,0,0,0.5)',
-            userSelect: 'none',
-            transition: 'background-color 0.3s ease'
+            fontFamily: 'Segoe UI, Tahoma, sans-serif',
+            boxShadow: '0px 0px 12px rgba(0,0,0,0.5)'
         });
         document.body.appendChild(toast);
     }
     toast.textContent = message;
 }
 
-// CSV download function
+// Download data as CSV
 function downloadCSV(data, filename = 'hs_training_data.csv') {
     const header = 'Document ID,Pages,Layout,Usage Rule,Source';
     const csvContent = data
@@ -44,8 +41,8 @@ function downloadCSV(data, filename = 'hs_training_data.csv') {
     setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
-// Main scraping logic
-async function extractFullTableWithPagination(cardSelector, headingText) {
+// Main function
+async function extractTableDataFromPages() {
     let maxPages = prompt("📄 How many pages to scrape?", "3");
     maxPages = parseInt(maxPages, 10);
     if (isNaN(maxPages) || maxPages < 1) {
@@ -57,15 +54,16 @@ async function extractFullTableWithPagination(cardSelector, headingText) {
     const capturedData = [];
 
     while (currentPage < maxPages) {
-        createOrUpdateToast(`📄 Extracting page ${currentPage + 1}...`);
+        createOrUpdateToast(`📄 Extracting Page ${currentPage + 1}...`);
 
-        // Wait for page data to load (40 sec recommended)
-        await new Promise(resolve => setTimeout(resolve, 40000));
+        // Wait for page content to fully load
+        await new Promise(resolve => setTimeout(resolve, 40000)); // 40 sec
 
-        const tableRows = document.querySelectorAll('table tbody tr');
-        tableRows.forEach(row => {
+        // Extract table data
+        const rows = document.querySelectorAll('table tbody tr');
+        rows.forEach(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length >= 6) {
+            if (cells.length >= 5) {
                 const rowData = [
                     cells[0]?.innerText.trim(), // Document ID
                     cells[1]?.innerText.trim(), // Pages
@@ -77,23 +75,25 @@ async function extractFullTableWithPagination(cardSelector, headingText) {
             }
         });
 
-        currentPage++;
+        // Try to go to next page
+        const targetCard = document.querySelector('[data-component="Card"]');
+        const nextPageLink = targetCard?.querySelector('[aria-label="Next page (Page Down)"]');
 
-        if (currentPage >= maxPages) break;
-
-        const nextPageBtn = document.querySelector('button[aria-label="Next page (Page Down)"]');
-        if (nextPageBtn && !nextPageBtn.disabled) {
-            nextPageBtn.click();
+        if (nextPageLink) {
+            nextPageLink.click();
         } else {
-            console.warn("❌ Next button not found or disabled. Stopping.");
-            createOrUpdateToast("❌ Next page link not found. Stopping.");
+            const stopMsg = '⚠️ Next page link not found. Stopping.';
+            console.warn(stopMsg);
+            createOrUpdateToast(stopMsg);
             break;
         }
+
+        currentPage++;
     }
 
     createOrUpdateToast(`✅ Done! Downloading ${capturedData.length} records...`);
     downloadCSV(capturedData);
 }
 
-// Run
-extractFullTableWithPagination('[data-component="Card"]', 'Excluded Training Data');
+// Run it
+extractTableDataFromPages();
